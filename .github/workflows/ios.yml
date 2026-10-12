@@ -1,0 +1,30 @@
+name: Gerar IPA experimental
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar XcodeGen
+        run: brew install xcodegen
+      - name: Gerar projeto
+        working-directory: ios
+        run: xcodegen generate
+      - name: Compilar sem assinatura para Sideloadly
+        run: >-
+          xcodebuild -project ios/PadBridge.xcodeproj -scheme PadBridge
+          -configuration Release -sdk iphoneos -destination 'generic/platform=iOS'
+          -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+      - name: Empacotar IPA
+        run: |
+          mkdir -p package/Payload
+          cp -R build/Build/Products/Release-iphoneos/PadBridge.app package/Payload/
+          cd package
+          zip -qry PadBridge-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PadBridge-IPA-Sideloadly
+          path: package/PadBridge-unsigned.ipa

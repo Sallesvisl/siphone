@@ -1,0 +1,7 @@
+build/
+package/
+*.xcodeproj/
+__pycache__/
+.venv/
+*.zip
+*.ipa
