@@ -135,6 +135,7 @@ final class AudioHost: ObservableObject {
             : "\(external.count) extensões de terceiros • \(instruments.count) com saída de áudio"
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
         diagnostics = "PadBridge \(version) | iOS \(UIDevice.current.systemVersion)\n"
+            + "Permissão no perfil: \(Self.profileAudioPermission())\n"
             + "Busca: todas as categorias\nTotal: \(all.count) | Terceiros: \(external.count)\n\n"
             + all.map { item in
                 let d = item.audioComponentDescription
@@ -145,6 +146,23 @@ final class AudioHost: ObservableObject {
     private static func code(_ value: OSType) -> String {
         String(bytes: [UInt8((value >> 24) & 255), UInt8((value >> 16) & 255),
                        UInt8((value >> 8) & 255), UInt8(value & 255)], encoding: .ascii) ?? "\(value)"
+    }
+
+    // Inspect only this boolean. Never display the profile's account/device IDs.
+    // A profile authorizes entitlements; it does not prove the signer kept them.
+    private static func profileAudioPermission() -> String {
+        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+              let data = try? Data(contentsOf: url),
+              let start = data.range(of: Data("<?xml".utf8)),
+              let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound..<data.endIndex),
+              let plist = try? PropertyListSerialization.propertyList(from: data.subdata(in: start.lowerBound..<end.upperBound), format: nil),
+              let dict = plist as? [String: Any],
+              let entitlements = dict["Entitlements"] as? [String: Any] else {
+            return "não foi possível ler (inconclusivo)"
+        }
+        return (entitlements["inter-app-audio"] as? Bool == true)
+            ? "inter-app-audio autorizado; assinatura final ainda precisa preservar a permissão"
+            : "inter-app-audio NÃO autorizado pelo perfil"
     }
 
     deinit { observers.forEach { NotificationCenter.default.removeObserver($0) } }
@@ -210,7 +228,7 @@ struct ContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("PadBridge").font(.largeTitle.bold())
-            Text("Protótipo 0.2 • áudio por USB para o REAPER").foregroundStyle(.secondary)
+            Text("Protótipo 0.3 • áudio por USB para o REAPER").foregroundStyle(.secondary)
             Text(host.transportStatus).font(.callout)
             HStack {
                 Menu("Selecionar instrumento") {
