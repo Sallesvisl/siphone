@@ -90,6 +90,9 @@ final class AudioHost: ObservableObject {
     @Published var transportStatus = "Inicializando conexão"
     @Published var editor: UIViewController?
     @Published var loading = false
+    @Published var discovery = "Buscando extensões…"
+    @Published var diagnostics = ""
+    private var observers: [NSObjectProtocol] = []
     private let engine = AVAudioEngine()
     private let bridge = AVAudioMixerNode()
     private let stream = USBStream()
@@ -103,6 +106,11 @@ final class AudioHost: ObservableObject {
         }
         do { try stream.start() } catch { transportStatus = error.localizedDescription }
         scan()
+        for notification in [AVAudioUnitComponentManager.registrationsChangedNotification,
+                             UIApplication.didBecomeActiveNotification] {
+            observers.append(NotificationCenter.default.addObserver(forName: notification,
+                object: nil, queue: .main) { [weak self] _ in self?.scan() })
+        }
         NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange,
             object: engine, queue: .main) { [weak self] _ in
                 guard let self = self, self.unit != nil, !self.loading else { return }
@@ -112,12 +120,34 @@ final class AudioHost: ObservableObject {
     }
 
     func scan() {
-        instruments = [kAudioUnitType_MusicDevice, kAudioUnitType_Generator].flatMap { type in
-            AVAudioUnitComponentManager.shared().components(matching:
-                AudioComponentDescription(componentType: type, componentSubType: 0,
-                    componentManufacturer: 0, componentFlags: 0, componentFlagsMask: 0))
-        }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        // Wildcards include effects and MIDI processors for diagnostics too.
+        // The first build only searched aumu/augn and exposed Apple's AUv2 units.
+        let all = AVAudioUnitComponentManager.shared().components(matching:
+            AudioComponentDescription(componentType: 0, componentSubType: 0,
+                componentManufacturer: 0, componentFlags: 0, componentFlagsMask: 0))
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        let external = all.filter { $0.audioComponentDescription.componentManufacturer != kAudioUnitManufacturer_Apple }
+        let playable: Set<OSType> = [kAudioUnitType_MusicDevice, kAudioUnitType_Generator,
+                                     kAudioUnitType_MusicEffect, kAudioUnitType_Effect]
+        instruments = external.filter { playable.contains($0.audioComponentDescription.componentType) }
+        discovery = external.isEmpty
+            ? "O iOS não retornou nenhuma extensão de terceiros."
+            : "\(external.count) extensões de terceiros • \(instruments.count) com saída de áudio"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        diagnostics = "PadBridge \(version) | iOS \(UIDevice.current.systemVersion)\n"
+            + "Busca: todas as categorias\nTotal: \(all.count) | Terceiros: \(external.count)\n\n"
+            + all.map { item in
+                let d = item.audioComponentDescription
+                return "\(item.name) | \(item.manufacturerName) | \(Self.code(d.componentType)) / \(Self.code(d.componentSubType)) | flags \(d.componentFlags)"
+            }.joined(separator: "\n")
     }
+
+    private static func code(_ value: OSType) -> String {
+        String(bytes: [UInt8((value >> 24) & 255), UInt8((value >> 16) & 255),
+                       UInt8((value >> 8) & 255), UInt8(value & 255)], encoding: .ascii) ?? "\(value)"
+    }
+
+    deinit { observers.forEach { NotificationCenter.default.removeObserver($0) } }
 
     func load(_ component: AVAudioUnitComponent) {
         loading = true
@@ -159,7 +189,7 @@ final class AudioHost: ObservableObject {
                         DispatchQueue.main.async {
                             guard self.unit === au else { return }
                             self.editor = controller
-                            if controller == nil { self.status = "O instrumento não forneceu uma interface AUv3." }
+                            if controller == nil { self.status = "\(component.name) não forneceu uma interface. Veja o diagnóstico." }
                         }
                     }
                 } catch { self.status = error.localizedDescription }
@@ -176,29 +206,45 @@ struct InstrumentEditor: UIViewControllerRepresentable {
 
 struct ContentView: View {
     @StateObject private var host = AudioHost()
+    @State private var showDiagnostics = false
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("PadBridge").font(.largeTitle.bold())
-            Text("Protótipo • áudio por USB para o REAPER").foregroundStyle(.secondary)
+            Text("Protótipo 0.2 • áudio por USB para o REAPER").foregroundStyle(.secondary)
             Text(host.transportStatus).font(.callout)
             HStack {
                 Menu("Selecionar instrumento") {
                     ForEach(Array(host.instruments.enumerated()), id: \.offset) { _, item in
                         Button(item.name) { host.load(item) }
                     }
-                }.disabled(host.loading)
+                }.disabled(host.loading || host.instruments.isEmpty)
                 Spacer()
                 Button("Atualizar") { host.scan() }.disabled(host.loading)
             }
             Text(host.status).font(.caption)
+            Text(host.discovery).font(.callout)
             if host.instruments.isEmpty {
-                Text("Nenhum AUv3 encontrado. Instale e abra o PadLab antes de atualizar a lista.")
+                Text("PadLab ausente? Abra o PadLab, volte aqui e atualize. Se continuar ausente, compartilhe o diagnóstico para investigar.")
+                    .font(.callout)
             }
+            Button("Ver diagnóstico") { showDiagnostics = true }
             if let editor = host.editor { InstrumentEditor(controller: editor).id(ObjectIdentifier(editor)) }
             else { Spacer() }
             Text("Mantenha este app aberto durante o teste. Latência ainda não medida.")
                 .font(.caption).foregroundStyle(.secondary)
         }.padding()
+        .sheet(isPresented: $showDiagnostics) {
+            NavigationStack {
+                ScrollView {
+                    Text(host.diagnostics).font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding()
+                }.navigationTitle("Diagnóstico AUv3")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Fechar") { showDiagnostics = false } }
+                    ToolbarItem(placement: .primaryAction) { ShareLink(item: host.diagnostics) }
+                }
+            }
+        }
     }
 }
 
