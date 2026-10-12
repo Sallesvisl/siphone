@@ -3,8 +3,10 @@
 Projeto para hospedar o PadLab AUv3 no iPhone e transmitir PCM estéreo pelo cabo
 Lightning–USB ao Windows, com saída ReaRoute ASIO para o REAPER.
 
-**Estado: código inicial; iOS não compilado nem testado em aparelho. Nenhum IPA
-foi gerado ainda. Transporte USB, interface do PadLab e latência não validados.**
+**Estado: IPA arm64 compilado com sucesso no GitHub Actions e sete testes do
+receptor aprovados. Ainda não testado em aparelho. Transporte USB, interface
+do PadLab e latência não validados.**
+Build: https://github.com/Sallesvisl/siphone/actions/runs/38188505922
 Não há garantia de uso ao vivo nesta versão. O PadLab precisa estar instalado
 separadamente e disponibilizar sua extensão AUv3 no iPhone.
 
@@ -12,8 +14,8 @@ separadamente e disponibilizar sua extensão AUv3 no iPhone.
 
 O arquivo `.github/workflows/ios.yml` prepara uma compilação manual em macOS
 no GitHub Actions. A execução exige um repositório na sua conta com Actions
-disponível; verifique a cota/custo da conta antes de executar. Este projeto não
-foi publicado e o workflow não foi executado nesta sessão.
+disponível; verifique a cota/custo da conta antes de executar. Este projeto está
+em https://github.com/Sallesvisl/siphone e o workflow já gerou o primeiro IPA.
 
 1. Envie os arquivos deste projeto para um repositório GitHub, incluindo `.github`.
 2. Em Actions, selecione **Gerar IPA experimental → Run workflow**.
@@ -105,3 +107,4 @@ de dados e limpeza da fila. Não substituem compilação Swift nem teste com har
 - https://github.com/libimobiledevice/libusbmuxd
 - https://sideloadly.io/faq.html
 - https://python-sounddevice.readthedocs.io/en/latest/installation.html
+
