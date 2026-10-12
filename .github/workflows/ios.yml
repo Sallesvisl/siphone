@@ -18,6 +18,11 @@ jobs:
           xcodebuild -project ios/PadBridge.xcodeproj -scheme PadBridge
           -configuration Release -sdk iphoneos -destination 'generic/platform=iOS'
           -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+      - name: Incorporar e verificar permissoes para reassinatura
+        run: |
+          codesign --force --sign - --entitlements ios/PadBridge.entitlements --generate-entitlement-der build/Build/Products/Release-iphoneos/PadBridge.app
+          codesign --display --entitlements :- build/Build/Products/Release-iphoneos/PadBridge.app > build/entitlements.plist
+          /usr/libexec/PlistBuddy -c 'Print :inter-app-audio' build/entitlements.plist | grep -qx true
       - name: Empacotar IPA
         run: |
           mkdir -p package/Payload
@@ -28,3 +33,4 @@ jobs:
         with:
           name: PadBridge-IPA-Sideloadly
           path: package/PadBridge-unsigned.ipa
+
